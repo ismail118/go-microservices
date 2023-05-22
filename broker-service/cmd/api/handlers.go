@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 )
@@ -11,11 +12,17 @@ import (
 type RequestPayload struct {
 	Action string      `json:"action"`
 	Auth   AuthPayload `json:"auth,omitempty"`
+	Log    LogPayload  `json:"log,omitempty"`
 }
 
 type AuthPayload struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+}
+
+type LogPayload struct {
+	Name string `json:"name"`
+	Data string `json:"data"`
 }
 
 func (app *Config) Broker(w http.ResponseWriter, r *http.Request) {
@@ -42,10 +49,54 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 	switch reqPayload.Action {
 	case "auth":
 		app.authenticate(w, reqPayload.Auth)
+	case "log":
+		app.logItem(w, reqPayload.Log)
 	default:
 		app.errorJson(w, errors.New("unknown action"))
 	}
 
+}
+
+func (app *Config) logItem(w http.ResponseWriter, entry LogPayload) {
+	jsonData, err := json.Marshal(entry)
+	if err != nil {
+		app.errorJson(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	logServiceURL := "http://logger-service/log"
+
+	req, err := http.NewRequest(http.MethodPost, logServiceURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		app.errorJson(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+
+	res, err := client.Do(req)
+	if err != nil {
+		app.errorJson(w, err, http.StatusInternalServerError)
+		return
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusAccepted {
+		app.errorJson(w, errors.New(fmt.Sprintf("%d", res.StatusCode)), res.StatusCode)
+		return
+	}
+
+	var payload jsonResponse
+	payload.Error = false
+	payload.Message = "logger"
+
+	err = app.writeJson(w, http.StatusAccepted, payload)
+	if err != nil {
+		app.errorJson(w, err, http.StatusInternalServerError)
+		return
+	}
 }
 
 func (app *Config) authenticate(w http.ResponseWriter, a AuthPayload) {
