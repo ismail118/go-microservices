@@ -13,6 +13,14 @@ type RequestPayload struct {
 	Action string      `json:"action"`
 	Auth   AuthPayload `json:"auth,omitempty"`
 	Log    LogPayload  `json:"log,omitempty"`
+	Mail   MailPayload `json:"mail,omitempty"`
+}
+
+type MailPayload struct {
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Subject string `json:"subject"`
+	Message string `json:"message"`
 }
 
 type AuthPayload struct {
@@ -51,6 +59,8 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 		app.authenticate(w, reqPayload.Auth)
 	case "log":
 		app.logItem(w, reqPayload.Log)
+	case "mail":
+		app.sendMail(w, reqPayload.Mail)
 	default:
 		app.errorJson(w, errors.New("unknown action"))
 	}
@@ -84,7 +94,7 @@ func (app *Config) logItem(w http.ResponseWriter, entry LogPayload) {
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusAccepted {
-		app.errorJson(w, errors.New(fmt.Sprintf("%d", res.StatusCode)), res.StatusCode)
+		app.errorJson(w, errors.New("error calling logger service"), res.StatusCode)
 		return
 	}
 
@@ -156,6 +166,47 @@ func (app *Config) authenticate(w http.ResponseWriter, a AuthPayload) {
 	payload.Data = jsonFromService.Data
 
 	err = app.writeJson(w, http.StatusAccepted, payload)
+	if err != nil {
+		app.errorJson(w, err, http.StatusInternalServerError)
+		return
+	}
+}
+
+func (app *Config) sendMail(w http.ResponseWriter, msg MailPayload) {
+	jsonData, err := json.Marshal(msg)
+	if err != nil {
+		app.errorJson(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	mailServiceURL := "http://mail-service/send"
+	req, err := http.NewRequest(http.MethodPost, mailServiceURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		app.errorJson(w, err, http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+
+	res, err := client.Do(req)
+	if err != nil {
+		app.errorJson(w, err, http.StatusInternalServerError)
+		return
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusAccepted {
+		app.errorJson(w, errors.New("error calling mail service"), res.StatusCode)
+		return
+	}
+
+	resPayload := jsonResponse{
+		Error:   false,
+		Message: fmt.Sprintf("mail send to %s", msg.To),
+	}
+
+	err = app.writeJson(w, http.StatusAccepted, resPayload)
 	if err != nil {
 		app.errorJson(w, err, http.StatusInternalServerError)
 		return
