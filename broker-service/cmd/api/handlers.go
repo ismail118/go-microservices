@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/rpc"
 )
 
 type RequestPayload struct {
@@ -59,8 +60,13 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 	case "auth":
 		app.authenticate(w, reqPayload.Auth)
 	case "log":
+		// via http
 		//app.logItem(w, reqPayload.Log)
-		app.logEvenViaRabbit(w, reqPayload.Log)
+		// via rabbitmq
+		//app.logEvenViaRabbit(w, reqPayload.Log)
+		// via rpc
+		app.logItemViaRpc(w, reqPayload.Log)
+
 	case "mail":
 		app.sendMail(w, reqPayload.Mail)
 	default:
@@ -255,4 +261,40 @@ func (app *Config) pushToQueue(name, msg string) error {
 	}
 
 	return nil
+}
+
+func (app *Config) logItemViaRpc(w http.ResponseWriter, l LogPayload) {
+	client, err := rpc.Dial("tcp", fmt.Sprintf("logger-service:%s", rpcPort))
+	if err != nil {
+		app.errorJson(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	// NOTE: payload must exactly same as rpc server expected, it is RpcPayload
+	rpcPayload := RpcPayload{
+		Name: l.Name,
+		Data: l.Data,
+	}
+
+	var result string
+	err = client.Call("RPCServer.LogInfo", rpcPayload, &result)
+	if err != nil {
+		app.errorJson(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	var payload jsonResponse
+	payload.Error = false
+	payload.Message = result
+
+	err = app.writeJson(w, http.StatusAccepted, payload)
+	if err != nil {
+		app.errorJson(w, err, http.StatusInternalServerError)
+		return
+	}
+}
+
+type RpcPayload struct {
+	Name string
+	Data string
 }
