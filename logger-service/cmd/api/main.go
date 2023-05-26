@@ -49,9 +49,12 @@ func main() {
 		Models: data.New(client),
 	}
 
-	// register rpc server
+	// register and run rpc server
 	err = rpc.Register(new(RPCServer))
 	go app.rpcListen()
+
+	// run grpc server
+	go app.gRPCListen()
 
 	log.Println("Starting service on port", port)
 	srv := &http.Server{

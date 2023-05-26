@@ -2,13 +2,18 @@ package main
 
 import (
 	"broker/event"
+	"broker/logs"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"log"
 	"net/http"
 	"net/rpc"
+	"time"
 )
 
 type RequestPayload struct {
@@ -297,4 +302,52 @@ func (app *Config) logItemViaRpc(w http.ResponseWriter, l LogPayload) {
 type RpcPayload struct {
 	Name string
 	Data string
+}
+
+func (app *Config) LogViaGRPC(w http.ResponseWriter, r *http.Request) {
+	var reqPayload RequestPayload
+
+	err := app.readJson(w, r, &reqPayload)
+	if err != nil {
+		app.errorJson(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	conn, err := grpc.Dial(
+		fmt.Sprintf("logger-service:%s", gRpcPort),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	defer conn.Close()
+	if err != nil {
+		app.errorJson(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	c := logs.NewLogServiceClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	_, err = c.WriteLog(ctx,
+		&logs.LogRequest{
+			LogEntry: &logs.Log{
+				Name: reqPayload.Log.Name,
+				Data: reqPayload.Log.Data,
+			},
+		},
+	)
+	if err != nil {
+		app.errorJson(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	var payload jsonResponse
+	payload.Error = false
+	payload.Message = "logged"
+
+	err = app.writeJson(w, http.StatusAccepted, payload)
+	if err != nil {
+		app.errorJson(w, err, http.StatusInternalServerError)
+		return
+	}
 }
