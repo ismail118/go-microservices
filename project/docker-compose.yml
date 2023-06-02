@@ -2,13 +2,27 @@ version: '3'
 
 services:
 
+  caddy:
+    build:
+      context: ./
+      dockerfile: ./caddy.dockerfile
+    deploy:
+      mode: replicated
+      replicas: 1
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
   broker-service:
     build:
       context: ./../broker-service
       dockerfile: ./../broker-service/broker-service.dockerfile
     restart: always
-    ports:
-      - "8080:80"
+#    ports:
+#      - "8080:8080"
     deploy:
       mode: replicated
       replicas: 1
@@ -103,3 +117,25 @@ services:
     deploy:
       mode: replicated
       replicas: 1
+
+  front-service:
+    build:
+      context: ./../front-end
+      dockerfile: ./../front-end/front-end.dockerfile
+    restart: always
+#    ports:
+#      - "8082:8081"
+    environment:
+      BROKER_URL: "http://backend"
+    deploy:
+      mode: replicated
+      replicas: 1
+
+
+
+
+
+volumes:
+  caddy_data:
+#    external: true
+  caddy_config:

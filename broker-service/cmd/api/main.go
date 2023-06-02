@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	port     = "80"
+	port     = "8080"
 	rpcPort  = "5001"
 	gRpcPort = "50001"
 )
