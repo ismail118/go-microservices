@@ -27,7 +27,7 @@ services:
       mode: global
 
   mongo:
-    image: 'mongo:latest'
+    image: 'mongo:4.2.24-bionic'
     ports:
       - "27017:27017"
     deploy:

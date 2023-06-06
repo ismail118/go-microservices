@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lister-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lister-service
+  template:
+    metadata:
+      labels:
+        app: lister-service
+    spec:
+      containers:
+      - name: lister-service
+        image: "ismail118/lister-service:1.0.0"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+          - containerPort: 80
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: lister-service
+spec:
+  selector:
+    app: lister-service
+  ports:
+    - protocol: TCP
+      name: main-port
+      port: 80
+      targetPort: 80
