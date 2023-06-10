@@ -1,8 +1,8 @@
 package main
 
 import (
-	"broker/event"
 	"broker/logs"
+	"broker/models"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,35 +10,10 @@ import (
 	"fmt"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"log"
 	"net/http"
 	"net/rpc"
 	"time"
 )
-
-type RequestPayload struct {
-	Action string      `json:"action"`
-	Auth   AuthPayload `json:"auth,omitempty"`
-	Log    LogPayload  `json:"log,omitempty"`
-	Mail   MailPayload `json:"mail,omitempty"`
-}
-
-type MailPayload struct {
-	From    string `json:"from"`
-	To      string `json:"to"`
-	Subject string `json:"subject"`
-	Message string `json:"message"`
-}
-
-type AuthPayload struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-type LogPayload struct {
-	Name string `json:"name"`
-	Data string `json:"data"`
-}
 
 func (app *Config) Broker(w http.ResponseWriter, r *http.Request) {
 	payload := jsonResponse{
@@ -48,12 +23,13 @@ func (app *Config) Broker(w http.ResponseWriter, r *http.Request) {
 
 	err := app.writeJson(w, http.StatusOK, payload)
 	if err != nil {
-		log.Panic(err)
+		app.errorJson(w, err, http.StatusInternalServerError)
+		return
 	}
 }
 
 func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
-	var reqPayload RequestPayload
+	var reqPayload models.RequestPayload
 
 	err := app.readJson(w, r, &reqPayload)
 	if err != nil {
@@ -80,7 +56,7 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (app *Config) logItem(w http.ResponseWriter, entry LogPayload) {
+func (app *Config) logItem(w http.ResponseWriter, entry models.LogPayload) {
 	jsonData, err := json.Marshal(entry)
 	if err != nil {
 		app.errorJson(w, err, http.StatusInternalServerError)
@@ -97,9 +73,7 @@ func (app *Config) logItem(w http.ResponseWriter, entry LogPayload) {
 
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
-
-	res, err := client.Do(req)
+	res, err := app.Client.Do(req)
 	if err != nil {
 		app.errorJson(w, err, http.StatusInternalServerError)
 		return
@@ -122,7 +96,7 @@ func (app *Config) logItem(w http.ResponseWriter, entry LogPayload) {
 	}
 }
 
-func (app *Config) authenticate(w http.ResponseWriter, a AuthPayload) {
+func (app *Config) authenticate(w http.ResponseWriter, a models.AuthPayload) {
 	// create some json we'll to the auth microservice
 	jsonData, err := json.Marshal(a)
 	if err != nil {
@@ -139,8 +113,7 @@ func (app *Config) authenticate(w http.ResponseWriter, a AuthPayload) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
-	res, err := client.Do(req)
+	res, err := app.Client.Do(req)
 	if err != nil {
 		app.errorJson(w, err)
 		return
@@ -164,6 +137,7 @@ func (app *Config) authenticate(w http.ResponseWriter, a AuthPayload) {
 
 	err = json.NewDecoder(res.Body).Decode(&jsonFromService)
 	if err != nil {
+		fmt.Println(err)
 		app.errorJson(w, err, http.StatusInternalServerError)
 		return
 	}
@@ -185,7 +159,7 @@ func (app *Config) authenticate(w http.ResponseWriter, a AuthPayload) {
 	}
 }
 
-func (app *Config) sendMail(w http.ResponseWriter, msg MailPayload) {
+func (app *Config) sendMail(w http.ResponseWriter, msg models.MailPayload) {
 	jsonData, err := json.Marshal(msg)
 	if err != nil {
 		app.errorJson(w, err, http.StatusInternalServerError)
@@ -200,9 +174,7 @@ func (app *Config) sendMail(w http.ResponseWriter, msg MailPayload) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
-
-	res, err := client.Do(req)
+	res, err := app.Client.Do(req)
 	if err != nil {
 		app.errorJson(w, err, http.StatusInternalServerError)
 		return
@@ -226,7 +198,7 @@ func (app *Config) sendMail(w http.ResponseWriter, msg MailPayload) {
 	}
 }
 
-func (app *Config) logEvenViaRabbit(w http.ResponseWriter, l LogPayload) {
+func (app *Config) logEvenViaRabbit(w http.ResponseWriter, l models.LogPayload) {
 	err := app.pushToQueue(l.Name, l.Data)
 	if err != nil {
 		app.errorJson(w, err, http.StatusInternalServerError)
@@ -245,12 +217,12 @@ func (app *Config) logEvenViaRabbit(w http.ResponseWriter, l LogPayload) {
 }
 
 func (app *Config) pushToQueue(name, msg string) error {
-	emitter, err := event.NewEventEmitter(app.RabbitMq)
+	err := app.Emitter.SetupEvenEmitter()
 	if err != nil {
 		return err
 	}
 
-	payload := LogPayload{
+	payload := models.LogPayload{
 		Name: name,
 		Data: msg,
 	}
@@ -260,7 +232,7 @@ func (app *Config) pushToQueue(name, msg string) error {
 		return err
 	}
 
-	err = emitter.Push(string(j), "log.INFO")
+	err = app.Emitter.Push(string(j), "log.INFO")
 	if err != nil {
 		return err
 	}
@@ -268,7 +240,7 @@ func (app *Config) pushToQueue(name, msg string) error {
 	return nil
 }
 
-func (app *Config) logItemViaRpc(w http.ResponseWriter, l LogPayload) {
+func (app *Config) logItemViaRpc(w http.ResponseWriter, l models.LogPayload) {
 	client, err := rpc.Dial("tcp", fmt.Sprintf("logger-service:%s", rpcPort))
 	if err != nil {
 		app.errorJson(w, err, http.StatusInternalServerError)
@@ -305,7 +277,7 @@ type RpcPayload struct {
 }
 
 func (app *Config) LogViaGRPC(w http.ResponseWriter, r *http.Request) {
-	var reqPayload RequestPayload
+	var reqPayload models.RequestPayload
 
 	err := app.readJson(w, r, &reqPayload)
 	if err != nil {

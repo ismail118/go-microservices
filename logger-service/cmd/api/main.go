@@ -23,7 +23,7 @@ const (
 var client *mongo.Client
 
 type Config struct {
-	Models data.Models
+	Repo data.Repository
 }
 
 func main() {
@@ -45,12 +45,14 @@ func main() {
 		}
 	}()
 
+	repo := data.NewMongoRepository(client)
 	app := Config{
-		Models: data.New(client),
+		Repo: repo,
 	}
 
 	// register and run rpc server
-	err = rpc.Register(new(RPCServer))
+	rpcSrv := NewRpcServer(repo)
+	err = rpc.Register(rpcSrv)
 	go app.rpcListen()
 
 	// run grpc server

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"broker/event"
 	"fmt"
 	"log"
 	"math"
@@ -18,7 +19,8 @@ const (
 )
 
 type Config struct {
-	RabbitMq *amqp.Connection
+	Emitter event.Emitter
+	Client  *http.Client
 }
 
 func main() {
@@ -30,8 +32,10 @@ func main() {
 	}
 	defer rabbitCon.Close()
 
+	emitter := event.NewRabbitEmitter(rabbitCon)
 	app := Config{
-		RabbitMq: rabbitCon,
+		Emitter: emitter,
+		Client:  &http.Client{},
 	}
 	log.Printf("Start service on port %s\n", port)
 

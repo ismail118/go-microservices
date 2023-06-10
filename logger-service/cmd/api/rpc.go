@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"log-service/data"
@@ -9,6 +8,7 @@ import (
 )
 
 type RPCServer struct {
+	Repo data.Repository
 }
 
 type RPCPayload struct {
@@ -16,14 +16,20 @@ type RPCPayload struct {
 	Data string
 }
 
+func NewRpcServer(r data.Repository) *RPCServer {
+	rpcSrv := new(RPCServer)
+	rpcSrv.Repo = r
+	return rpcSrv
+}
+
 func (r *RPCServer) LogInfo(payload RPCPayload, resp *string) error {
-	collection := client.Database("logsdb").Collection("logs")
-	_, err := collection.InsertOne(context.TODO(), data.LogEntry{
+	entry := data.LogEntry{
 		Name:      payload.Name,
 		Data:      payload.Data,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
-	})
+	}
+	err := r.Repo.Insert(entry)
 	if err != nil {
 		log.Println("error writing to mongo:", err)
 		return err

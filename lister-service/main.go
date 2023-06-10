@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+var consumer event.Consumer
+
 func main() {
 	// try to connect to rabbitmq
 	rabbitCon, err := connect()
@@ -22,10 +24,11 @@ func main() {
 	log.Println("Listening for and consuming RabbitMQ messages...")
 
 	// create consumer
-	consumer, err := event.NewConsumer(rabbitCon)
+	rc, err := event.NewRabbitConsumer(rabbitCon)
 	if err != nil {
 		panic(err)
 	}
+	consumer = rc
 
 	// watch the queue and consume events
 	err = consumer.Listen([]string{"log.INFO", "log.WARNING", "log.ERROR"})
