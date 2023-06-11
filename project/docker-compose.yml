@@ -64,7 +64,7 @@ services:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: password
     volumes:
-      - ./db-data/mongo/:/data/db
+      - ./db-data/mongo-2/:/data/db
 
   logger-service:
     build:
